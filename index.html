@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Internship Candidate Dashboard</title>
+<style>
+:root{--ink:#172033;--muted:#64748b;--line:#e2e8f0;--bg:#f5f7fb;--blue:#3157d5;--green:#16835d}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:#fff;border-bottom:1px solid var(--line);padding:22px 5%;display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
+h1{font-size:23px;margin:0 0 5px}.sub{color:var(--muted);font-size:14px}
+main{padding:28px 5%;max-width:1500px;margin:auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:22px}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px}.label{font-size:13px;color:var(--muted)}.number{font-size:27px;font-weight:700;margin-top:8px}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:15px}.toolbar input,.toolbar select{padding:11px;border:1px solid var(--line);border-radius:8px;background:#fff}
+button,.btn{border:0;background:var(--blue);color:#fff;border-radius:8px;padding:9px 12px;cursor:pointer;text-decoration:none;display:inline-block;font-size:13px}
+.btn.secondary{background:#e8edff;color:#233fa9}.btn.ai{background:#16835d}.btn:disabled{opacity:.5;cursor:wait}
+.table-wrap{overflow:auto;background:#fff;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:1050px}th,td{text-align:left;padding:12px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top}th{background:#f8fafc;color:#475569;position:sticky;top:0}
+td input,td select{padding:7px;border:1px solid var(--line);border-radius:6px;max-width:145px}.explanation{min-width:230px;max-width:310px;white-space:normal;line-height:1.4}.flash{padding:12px;border-radius:8px;margin-bottom:12px;background:#e9f8f0;color:#176343}.flash.error{background:#fff0f0;color:#a22}.actions{display:flex;gap:6px;flex-wrap:wrap}.empty{padding:25px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>AI Internship Candidate Dashboard</h1><div class="sub">Review candidate projects, GitHub links, dates and status</div></div>
+  <div class="sub">Candidate records: <strong>{{ total }}</strong></div>
+</header>
+<main>
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% for category, message in messages %}<div class="flash {{ 'error' if category == 'error' else '' }}">{{ message }}</div>{% endfor %}
+{% endwith %}
+<section class="cards">
+  <div class="card"><div class="label">Total Candidates</div><div class="number">{{ total }}</div></div>
+  <div class="card"><div class="label">Shown in this view</div><div class="number">{{ candidates|length }}</div></div>
+  <div class="card"><div class="label">Project review</div><div class="number" style="font-size:18px">GitHub + AI</div></div>
+</section>
+<form class="toolbar" method="get">
+  <input name="q" value="{{ request.args.get('q','') }}" placeholder="Search name, project, email...">
+  <select name="status">
+    <option value="">All statuses</option>
+    {% for s in statuses %}<option value="{{ s }}" {% if request.args.get('status') == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+  </select>
+  <button type="submit">Search / Filter</button><a class="btn secondary" href="/">Clear</a>
+</form>
+<div class="table-wrap">
+<table>
+<thead><tr><th>ID</th><th>Candidate</th><th>Project</th><th>GitHub</th><th>Applied</th><th>Interview Date</th><th>AI Explanation</th><th>Status</th><th>Actions</th></tr></thead>
+<tbody>
+{% for c in candidates %}
+<tr>
+<td>{{ c.get('Candidate ID','') }}</td>
+<td><strong>{{ c.get('Candidate Name','') }}</strong><br><span class="sub">{{ c.get('Email','') }}</span></td>
+<td>{{ c.get('Project Title','') or 'Not added' }}</td>
+<td>{% if c.get('GitHub Link','').startswith('https://') or c.get('GitHub Link','').startswith('http://') %}<a class="btn secondary" target="_blank" rel="noopener" href="{{ c.get('GitHub Link') }}">View GitHub</a>{% else %}<span class="sub">Link not added</span>{% endif %}</td>
+<td>{{ c.get('Applied Date','') }}</td>
+<td>
+<form id="form-{{ c['_row'] }}" method="post" action="{{ url_for('update_candidate', row_num=c['_row']) }}">
+<input type="date" name="interview_date" aria-label="Interview date" value="{{ c.get('Interview Date','') if '-' in c.get('Interview Date','') and c.get('Interview Date','').startswith('20') else '' }}">
+<input type="hidden" name="ai_explanation" id="ai-{{ c['_row'] }}" value="{{ c.get('AI Project Explanation','') }}">
+</form>
+</td>
+<td class="explanation" id="explanation-{{ c['_row'] }}">{{ c.get('AI Project Explanation','Not generated') }}</td>
+<td>
+<select name="status" form="form-{{ c['_row'] }}">
+{% for s in statuses %}<option value="{{ s }}" {% if c.get('Selection Status','Applied') == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+</select>
+</td>
+<td><div class="actions">
+<button type="button" class="ai" onclick="explain({{ c['_row'] }}, this)">Explain with AI</button>
+<button type="submit" form="form-{{ c['_row'] }}">Save</button>
+</div></td>
+</tr>
+{% endfor %}
+{% if not candidates %}<tr><td colspan="9" class="empty">No candidates found. Check the Excel file is in the same folder as app.py.</td></tr>{% endif %}
+</tbody>
+</table>
+</div>
+<p class="sub" style="margin-top:14px">Demo note: the dashboard reads and updates your Excel file. The AI button is a placeholder until a real AI API and repository-reading step are configured.</p>
+</main>
+<script>
+async function explain(row, button) {
+  button.disabled = true; button.textContent = "Working...";
+  try {
+    const response = await fetch(`/explain/${row}`, {method:"POST"});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not generate explanation");
+    document.getElementById(`explanation-${row}`).textContent = data.explanation;
+    document.getElementById(`ai-${row}`).value = data.explanation;
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    button.disabled = false; button.textContent = "Explain with AI";
+  }
+}
+</script>
+</body>
+</html>
